@@ -9,7 +9,8 @@ contract SequencerRandomOracle {
         commitments[round] = commitment;
     }
 
-    function reveal(uint256 round, string memory value) public {
-        revealedValues[round] = keccak256(abi.encodePacked(value));
+    function reveal(uint256 round, bytes32 value) public {
+        require(keccak256(abi.encodePacked(value)) == commitments[round], "Invalid value");
+        revealedValues[round] = value;
     }
 }

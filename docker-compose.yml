@@ -5,7 +5,8 @@ services:
     image: exca00/foundry-rs:latest-arm
     ports:
       - "8545:8545"
-    command: ["anvil", "--block-time", "2", "--host", "0.0.0.0"]
+    entrypoint: anvil
+    command: ["--block-time", "2", "--host", "0.0.0.0"]
     environment:
       - ANVIL_IP_ADDR=0.0.0.0
 
@@ -28,7 +29,8 @@ services:
       - DELAY=9
       - PRECOMMIT_DELAY=10
       - DRAND_INTERVAL=3
-      - DRAND_GENESIS=1609459200
+      - DRAND_GENESIS=1677685200
+      - DRAND_CHAIN_HASH=dbd506d6ef76e5f386f41c651dcb808c5bcbd75471cc4eafa3f4df7ad4e4c493
     depends_on:
       - anvil
       - init
