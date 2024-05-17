@@ -16,6 +16,15 @@ services:
       - shared:/app/shared
     depends_on:
       - anvil
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "test -f /app/contracts/shared/addresses.json && echo 'ok'",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 5
 
   server:
     build: ./server
@@ -32,8 +41,10 @@ services:
       - DRAND_GENESIS=1677685200
       - DRAND_CHAIN_HASH=dbd506d6ef76e5f386f41c651dcb808c5bcbd75471cc4eafa3f4df7ad4e4c493
     depends_on:
-      - anvil
-      - init
+      anvil:
+        condition: service_started
+      init:
+        condition: service_completed_successfully
 
 volumes:
   shared:

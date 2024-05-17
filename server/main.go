@@ -108,21 +108,28 @@ func main() {
 	if mnemonic == "" {
 		log.Fatal("MNEMONIC environment variable is not set")
 	}
+	log.Println("Starting server with the following configuration:")
+	log.Printf("Anvil URL: %s", anvilURL)
+	log.Printf("Drand URL: %s", drandURL)
+	log.Printf("Drand Chain Hash: %s", drandChainHash)
 
 	privateKey, err := derivePrivateKeyFromMnemonic(mnemonic)
 	if err != nil {
 		log.Fatalf("Failed to derive private key: %v", err)
 	}
+	log.Println("Derived private key from mnemonic successfully.")
 
 	client, err := ethclient.Dial(anvilURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
 	}
+	log.Println("Connected to the Ethereum client successfully.")
 
 	err = loadContractAddresses("/app/shared/addresses.json")
 	if err != nil {
 		log.Fatalf("Failed to load contract addresses: %v", err)
 	}
+	log.Println("Loaded contract addresses successfully.")
 
 	chainHash, err := hex.DecodeString(drandChainHash)
 	if err != nil {
@@ -133,15 +140,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create Drand HTTP client: %v", err)
 	}
+	log.Println("Created Drand HTTP client successfully.")
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		currentTime := time.Now().Unix()
+		log.Printf("Current time: %d", currentTime)
 
 		if currentTime%2 == 0 {
 			sequencerRandomValue := generateSequencerRandom()
+			log.Printf("Generated sequencer random value: %s", sequencerRandomValue)
 			commitSequencerRandom(client, privateKey, currentTime, sequencerRandomValue)
 		}
 
@@ -151,12 +161,14 @@ func main() {
 				log.Printf("Error fetching Drand value: %v", err)
 				continue
 			}
-			addDrandValue(client, privateKey, currentTime, string(drandValue))
+			log.Printf("Fetched Drand value: %s", hex.EncodeToString(drandValue))
+			addDrandValue(client, privateKey, currentTime, hex.EncodeToString(drandValue))
 		}
 
 		if (currentTime-precommitDelay)%2 == 0 {
 			revealTime := currentTime - precommitDelay
 			revealValue := generateSequencerRandom() // Fetch the actual committed value in practice
+			log.Printf("Revealing sequencer random value: %s for time: %d", revealValue, revealTime)
 			revealSequencerRandom(client, privateKey, revealTime, revealValue)
 		}
 	}
@@ -164,6 +176,7 @@ func main() {
 
 func getDrandValue(drandClient client.Client, timestamp int64) ([]byte, error) {
 	round := (timestamp - drandGenesis) / drandInterval
+	log.Printf("Fetching Drand value for round: %d", round)
 
 	result, err := drandClient.Get(context.Background(), uint64(round))
 	if err != nil {
@@ -181,22 +194,27 @@ func generateSequencerRandom() string {
 
 func commitSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, randomValue string) {
 	commitment := sha256.Sum256([]byte(randomValue))
+	log.Printf("Committing sequencer random value: %s at timestamp: %d", randomValue, timestamp)
 	commit(client, privateKey, contractAddresses.SequencerRandomOracleAddress, timestamp, commitment[:])
 }
 
 func revealSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, randomValue string) {
+	log.Printf("Revealing sequencer random value: %s at timestamp: %d", randomValue, timestamp)
 	reveal(client, privateKey, contractAddresses.SequencerRandomOracleAddress, timestamp, randomValue)
 }
 
 func addDrandValue(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, value string) {
+	log.Printf("Adding Drand value: %s at timestamp: %d", value, timestamp)
 	sendTransaction(client, privateKey, contractAddresses.DrandOracleAddress, "addDrandValue", timestamp, value)
 }
 
 func commit(client *ethclient.Client, privateKey *ecdsa.PrivateKey, contractAddress string, timestamp int64, commitment []byte) {
+	log.Printf("Committing value to contract: %s at timestamp: %d", contractAddress, timestamp)
 	sendTransaction(client, privateKey, contractAddress, "commit", timestamp, hex.EncodeToString(commitment))
 }
 
 func reveal(client *ethclient.Client, privateKey *ecdsa.PrivateKey, contractAddress string, timestamp int64, value string) {
+	log.Printf("Revealing value to contract: %s at timestamp: %d", contractAddress, timestamp)
 	sendTransaction(client, privateKey, contractAddress, "reveal", timestamp, value)
 }
 
