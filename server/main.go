@@ -18,6 +18,8 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
+	"github.com/drand/drand/client"
+	httpclient "github.com/drand/drand/client/http"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -46,6 +48,8 @@ var (
 	precommitDelay    = getEnvAsInt("PRECOMMIT_DELAY", 10)
 	drandInterval     = getEnvAsInt("DRAND_INTERVAL", 3)
 	drandGenesis      = getEnvAsInt("DRAND_GENESIS", 1609459200)
+	drandChainHash    = getEnv("DRAND_CHAIN_HASH", "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971")
+	drandURL          = getEnv("DRAND_URL", "https://api.drand.sh")
 	contractAddresses ContractAddresses
 )
 
@@ -120,6 +124,16 @@ func main() {
 		log.Fatalf("Failed to load contract addresses: %v", err)
 	}
 
+	chainHash, err := hex.DecodeString(drandChainHash)
+	if err != nil {
+		log.Fatalf("Failed to decode Drand chain hash: %v", err)
+	}
+
+	drandClient, err := httpclient.New(drandURL, chainHash, http.DefaultTransport)
+	if err != nil {
+		log.Fatalf("Failed to create Drand HTTP client: %v", err)
+	}
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -132,12 +146,12 @@ func main() {
 		}
 
 		if currentTime%3 == 0 {
-			drandValue, err := getDrandValue(currentTime)
+			drandValue, err := getDrandValue(drandClient, currentTime)
 			if err != nil {
 				log.Printf("Error fetching Drand value: %v", err)
 				continue
 			}
-			addDrandValue(client, privateKey, currentTime, drandValue)
+			addDrandValue(client, privateKey, currentTime, string(drandValue))
 		}
 
 		if (currentTime-precommitDelay)%2 == 0 {
@@ -148,31 +162,15 @@ func main() {
 	}
 }
 
-func getDrandValue(timestamp int64) (string, error) {
+func getDrandValue(drandClient client.Client, timestamp int64) ([]byte, error) {
 	round := (timestamp - drandGenesis) / drandInterval
-	url := fmt.Sprintf("https://api.drand.sh/public/%d", round)
 
-	resp, err := httpGet(url)
+	result, err := drandClient.Get(context.Background(), uint64(round))
 	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var drandResp DrandResponse
-	if err := json.Unmarshal(body, &drandResp); err != nil {
-		return "", err
-	}
-
-	return drandResp.Randomness, nil
+	return result.Randomness(), nil
 }
 
 func generateSequencerRandom() string {
@@ -223,11 +221,12 @@ func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, con
 	if methodName == "commit" || methodName == "addDrandValue" {
 		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), common.HexToHash(value))
 	} else if methodName == "reveal" {
-		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), value)
+		valueBytes32 := common.HexToHash(value)
+		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), valueBytes32)
 	}
 
 	if err != nil {
-		log.Fatalf("Failed to pack method call data: %v", err)
+		log.Fatalf("Failed to pack method call data for method %s: with value: %s, %v", methodName, value, err)
 	}
 
 	tx := types.NewTransaction(nonce, common.HexToAddress(contractAddress), big.NewInt(0), uint64(3000000), gasPrice, data)
