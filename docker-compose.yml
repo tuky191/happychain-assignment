@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  anvil:
+    image: exca00/foundry-rs:latest-arm
+    ports:
+      - "8545:8545"
+    command: ["anvil", "--block-time", "2", "--host", "0.0.0.0"]
+    environment:
+      - ANVIL_IP_ADDR=0.0.0.0
+
+  init:
+    build: ./contracts
+    volumes:
+      - shared:/app/shared
+    depends_on:
+      - anvil
+
+  server:
+    build: ./server
+    command: ["tail", "-f", "/dev/null"]
+    #command: ["/bin/sh", "-c", "/app/read_env_and_run.sh"]
+    volumes:
+      - shared:/app/shared
+    environment:
+      - ANVIL_URL=http://anvil:8545
+      - MNEMONIC=test test test test test test test test test test test junk
+      - DELAY=9
+      - PRECOMMIT_DELAY=10
+      - DRAND_INTERVAL=3
+      - DRAND_GENESIS=1609459200
+    depends_on:
+      - anvil
+      - init
+
+volumes:
+  shared:
+  # frontend:
+  #   build: ./frontend
+  #   volumes:
+  #     - ./frontend:/frontend
+  #   working_dir: /frontend
+  #   ports:
+  #     - "3000:3000"
+  #   command: npm start
+  #   depends_on:
+  #     - server
