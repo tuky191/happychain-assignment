@@ -4,10 +4,12 @@ services:
   anvil:
     image: ghcr.io/foundry-rs/foundry:latest
     platform: linux/amd64
+    volumes:
+      - anvil-data:/data
     ports:
       - "8545:8545"
     entrypoint: anvil
-    command: ["--block-time", "2", "--host", "0.0.0.0"]
+    command: ["--block-time", "2", "--host", "0.0.0.0", "--state", "/data"]
 
   init:
     build: ./contracts
@@ -143,3 +145,4 @@ volumes:
   redis-data:
   stats-db-data:
   logs:
+  anvil-data:
