@@ -26,7 +26,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	bip39 "github.com/tyler-smith/go-bip39"
+	"golang.org/x/crypto/sha3"
 )
+
+var commitments = make(map[int64]string)
 
 type DrandResponse struct {
 	Round      int64  `json:"round"`
@@ -152,6 +155,7 @@ func main() {
 		if currentTime%2 == 0 {
 			sequencerRandomValue := generateSequencerRandom()
 			log.Printf("Generated sequencer random value: %s", sequencerRandomValue)
+			commitments[currentTime] = sequencerRandomValue
 			commitSequencerRandom(client, privateKey, currentTime, sequencerRandomValue)
 		}
 
@@ -161,17 +165,33 @@ func main() {
 				log.Printf("Error fetching Drand value: %v", err)
 				continue
 			}
-			log.Printf("Fetched Drand value: %s", hex.EncodeToString(drandValue))
-			addDrandValue(client, privateKey, currentTime, hex.EncodeToString(drandValue))
+			drandValueHex := hex.EncodeToString(drandValue)
+			log.Printf("Fetched Drand value: %s", drandValueHex)
+			addDrandValue(client, privateKey, currentTime, drandValueHex)
 		}
 
 		if (currentTime-precommitDelay)%2 == 0 {
 			revealTime := currentTime - precommitDelay
-			revealValue := generateSequencerRandom() // Fetch the actual committed value in practice
+			revealValue, exists := commitments[revealTime]
+			if !exists {
+				log.Printf("No committed value found for time: %d", revealTime)
+				continue
+			}
 			log.Printf("Revealing sequencer random value: %s for time: %d", revealValue, revealTime)
 			revealSequencerRandom(client, privateKey, revealTime, revealValue)
+
+			// Calculate randomness(T)
+			drandValue, err := getDrandValue(drandClient, revealTime)
+			if err != nil {
+				log.Printf("Error fetching Drand value for randomness calculation: %v", err)
+				continue
+			}
+			drandValueHex := hex.EncodeToString(drandValue)
+			randomness := calculateRandomness(drandValueHex, revealValue)
+			log.Printf("Calculated randomness for time %d: %s", revealTime, randomness)
 		}
 	}
+
 }
 
 func getDrandValue(drandClient client.Client, timestamp int64) ([]byte, error) {
@@ -184,6 +204,18 @@ func getDrandValue(drandClient client.Client, timestamp int64) ([]byte, error) {
 	}
 
 	return result.Randomness(), nil
+}
+
+func keccak256(data []byte) []byte {
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write(data)
+	return hash.Sum(nil)
+}
+
+func calculateRandomness(drandValue, commitmentValue string) string {
+	combined := []byte(drandValue + commitmentValue)
+	hash := keccak256(combined)
+	return hex.EncodeToString(hash)
 }
 
 func generateSequencerRandom() string {
@@ -239,8 +271,7 @@ func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, con
 	if methodName == "commit" || methodName == "addDrandValue" {
 		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), common.HexToHash(value))
 	} else if methodName == "reveal" {
-		valueBytes32 := common.HexToHash(value)
-		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), valueBytes32)
+		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), common.HexToHash(value))
 	}
 
 	if err != nil {

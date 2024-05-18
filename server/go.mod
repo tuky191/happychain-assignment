@@ -8,6 +8,7 @@ require (
 	github.com/drand/drand v1.5.11
 	github.com/ethereum/go-ethereum v1.14.3
 	github.com/tyler-smith/go-bip39 v1.1.0
+	golang.org/x/crypto v0.22.0
 )
 
 require (
@@ -47,7 +48,6 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.25.0 // indirect
-	golang.org/x/crypto v0.22.0 // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
