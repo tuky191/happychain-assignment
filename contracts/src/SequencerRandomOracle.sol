@@ -2,33 +2,50 @@
 pragma solidity ^0.8.0;
 
 contract SequencerRandomOracle {
-    uint256 public constant PRECOMMIT_DELAY = 10;
-    mapping(uint256 => bytes32) public commitments;
-    mapping(uint256 => bytes32) public revealedValues;
+    uint constant PRECOMMIT_DELAY = 10; // blocks, for testing purposes
 
-    event CommitmentPosted(uint256 indexed time, bytes32 commitment);
-    event ValueRevealed(uint256 indexed time, bytes32 value);
-
-    function postCommitment(uint256 time, bytes32 commitment) external {
-        require(block.timestamp <= time - PRECOMMIT_DELAY, "SequencerRandomOracle: Commitment too late");
-        require(commitments[time] == bytes32(0), "SequencerRandomOracle: Commitment already posted");
-
-        commitments[time] = commitment;
-
-        emit CommitmentPosted(time, commitment);
+    struct SequencerEntry {
+        bytes32 randomnessHash;
+        bytes32 randomness;
+        uint blockNumber;
+        bool committed;
+        bool revealed;
     }
 
-    function revealValue(uint256 time, bytes32 value) external {
-        require(block.timestamp >= time, "SequencerRandomOracle: Too early to reveal");
-        require(commitments[time] != bytes32(0), "SequencerRandomOracle: No commitment found");
-        require(keccak256(abi.encodePacked(value)) == commitments[time], "SequencerRandomOracle: Invalid value");
+    mapping(uint => SequencerEntry) public sequencerEntries;
 
-        revealedValues[time] = value;
+    event SequencerRandomnessPosted(uint indexed T, bytes32 randomnessHash);
+    event SequencerRandomnessRevealed(uint indexed T, bytes32 randomness);
 
-        emit ValueRevealed(time, value);
+    function postRandomnessCommitment(uint T, bytes32 randomnessHash) external {
+        SequencerEntry storage entry = sequencerEntries[T];
+        require(!entry.committed, "Sequencer entry already committed");
+
+        entry.randomnessHash = randomnessHash;
+        entry.blockNumber = block.number;
+        entry.committed = true;
+        entry.revealed = false;
+
+        emit SequencerRandomnessPosted(T, randomnessHash);
     }
 
-    function getSequencerRandom(uint256 time) external view returns (bytes32) {
-        return revealedValues[time];
+    function revealSequencerRandomness(uint T, bytes32 randomness) external {
+        SequencerEntry storage entry = sequencerEntries[T];
+        require(entry.committed, "Sequencer randomness not committed");
+        require(block.number > entry.blockNumber + PRECOMMIT_DELAY, "Precommit delay not passed");
+        require(!entry.revealed, "Sequencer randomness already revealed");
+        require(entry.randomnessHash == keccak256(abi.encodePacked(randomness)), "Invalid randomness reveal");
+
+        entry.randomness = randomness;
+        entry.revealed = true;
+
+        emit SequencerRandomnessRevealed(T, randomness);
+    }
+
+    function getSequencerRandomness(uint T) external view returns (bytes32) {
+        SequencerEntry storage entry = sequencerEntries[T];
+        require(entry.revealed, "Sequencer randomness not available");
+
+        return entry.randomness;
     }
 }

@@ -2,23 +2,43 @@
 pragma solidity ^0.8.0;
 
 contract DrandOracle {
-    uint256 public constant TIMEOUT = 10;
-    mapping(uint256 => bytes32) public randomness;
-    mapping(uint256 => bool) public hasRandomness;
+    uint constant TIMEOUT = 10; // seconds, for testing purposes
 
-    event RandomnessUpdated(uint256 indexed time, bytes32 randomness);
-
-    function updateRandomness(uint256 time, bytes32 value) external {
-        require(block.timestamp <= time + TIMEOUT, "DrandOracle: TIMEOUT exceeded");
-        require(!hasRandomness[time], "DrandOracle: Randomness already set");
-
-        randomness[time] = value;
-        hasRandomness[time] = true;
-
-        emit RandomnessUpdated(time, value);
+    struct DrandEntry {
+        bytes32 randomness;
+        uint timestamp;
+        bool filled;
     }
 
-    function getRandomness(uint256 time) external view returns (bytes32) {
-        return randomness[time];
+    mapping(uint => DrandEntry) public drandEntries;
+
+    event DrandUpdated(uint indexed T, bytes32 randomness);
+    
+    function postDrandRandomness(uint T, bytes32 randomness) external {
+        require(block.timestamp <= T + TIMEOUT, "Update period has expired");
+
+        DrandEntry storage entry = drandEntries[T];
+        require(!entry.filled, "Drand entry already filled");
+
+        entry.randomness = randomness;
+        entry.timestamp = block.timestamp;
+        entry.filled = true;
+
+        emit DrandUpdated(T, randomness);
+    }
+
+    function getDrand(uint T) external view returns (bytes32) {
+        DrandEntry storage entry = drandEntries[T];
+        require(entry.filled, "Drand entry not available");
+
+        return entry.randomness;
+    }
+
+    function isDrandAvailable(uint T) external view returns (bool) {
+        return drandEntries[T].filled;
+    }
+
+    function hasUpdatePeriodExpired(uint T) external view returns (bool) {
+        return block.timestamp > T + TIMEOUT;
     }
 }

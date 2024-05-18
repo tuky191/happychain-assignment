@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -40,6 +41,7 @@ func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, con
 		txHash:          signedTx.Hash(),
 		attempts:        0,
 		initialSend:     time.Now(),
+		tx:              signedTx,
 	}
 	poolMutex.Unlock()
 
@@ -101,17 +103,22 @@ func retryTransactions() {
 		if tx.attempts == 0 && time.Since(tx.initialSend) < 10*time.Second {
 			continue
 		}
+		receipt, err := tx.client.TransactionReceipt(context.Background(), tx.txHash)
 
 		// Check if it's time for the next retry
 		if time.Since(tx.lastRetry) >= tx.backoffDuration {
 			customHash := generateCustomHash(tx.methodName, tx.timestamp, tx.value)
-			receipt, err := tx.client.TransactionReceipt(context.Background(), tx.txHash)
 			if err == nil && receipt.Status == types.ReceiptStatusSuccessful {
 				log.Printf("Transaction %s with method %s was successful", tx.txHash.Hex(), tx.methodName)
 				delete(transactionPool, common.HexToHash(customHash))
 				continue
 			}
 
+			revertReason, err := getRevertReason(tx.client, tx.tx, receipt.BlockNumber)
+			if err != nil {
+				log.Fatalf("Failed to get revert reason for %s: %v", tx.txHash.Hex(), err)
+			}
+			log.Printf("Tx: %s, failed with revert reason: %s", tx.txHash.Hex(), revertReason)
 			if tx.attempts >= 3 {
 				log.Printf("Transaction %s with method %s failed after %d attempts", tx.txHash.Hex(), tx.methodName, tx.attempts)
 				delete(transactionPool, common.HexToHash(customHash))
@@ -132,10 +139,42 @@ func retryTransactions() {
 			if err != nil {
 				log.Fatalf("Failed to resend transaction: %v", err)
 			}
-
 			log.Printf("Resent transaction: %s with method: %s (attempt %d)", signedTx.Hash().Hex(), tx.methodName, tx.attempts)
 			tx.txHash = signedTx.Hash()
+			tx.tx = signedTx
 			transactionPool[common.HexToHash(customHash)] = tx
 		}
 	}
+}
+
+func getRevertReason(client *ethclient.Client, tx *types.Transaction, blockNumber *big.Int) (string, error) {
+
+	msg := ethereum.CallMsg{
+		To:   tx.To(),
+		Data: tx.Data(),
+	}
+
+	ctx := context.Background()
+	raw, err := client.CallContract(ctx, msg, blockNumber)
+	if err != nil {
+		return fmt.Sprintf("%v : %s", err, string(raw)), nil
+	}
+
+	revertReason, err := abiUnpackRevertReason(raw)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack revert reason: %v", err)
+	}
+
+	return revertReason, nil
+}
+
+func abiUnpackRevertReason(data []byte) (string, error) {
+	if len(data) < 4 || data[0] != 0x08 || data[1] != 0xc3 || data[2] != 0x79 || data[3] != 0xa0 {
+		return "", fmt.Errorf("not a revert reason")
+	}
+
+	revertReasonBytes := data[4:]
+	revertReason := new(big.Int).SetBytes(revertReasonBytes).String()
+
+	return revertReason, nil
 }

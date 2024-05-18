@@ -13,19 +13,28 @@ contract RandomnessOracle {
         sequencerRandomOracle = SequencerRandomOracle(_sequencerRandomOracle);
     }
 
-    function getRandomness(uint256 time) public view returns (bytes32) {
-        bytes32 drandValue = drandOracle.getRandomness(time - 9); // Use DELAY = 9
-        bytes32 commitmentValue = sequencerRandomOracle.getSequencerRandom(time);
-        return keccak256(abi.encodePacked(drandValue, commitmentValue));
+    function computeRandomness(uint T) public view returns (bytes32) {
+        bytes32 drandRandomness = drandOracle.getDrand(T);
+        bytes32 sequencerRandomness = sequencerRandomOracle.getSequencerRandomness(T);
+        if (drandRandomness == 0 || sequencerRandomness == 0) {
+            return 0;
+        }
+        return keccak256(abi.encodePacked(drandRandomness, sequencerRandomness));
     }
 
-    function safeGetRandomness(uint256 time) public view returns (bytes32) {
-        bytes32 randomness = getRandomness(time);
-        require(randomness != bytes32(0), "RandomnessOracle: Randomness not available");
+    function isRandomnessEverAvailable(uint T) external view returns (bool) {
+        bool drandAvailable = drandOracle.isDrandAvailable(T) || drandOracle.hasUpdatePeriodExpired(T);
+        bool sequencerAvailable = sequencerRandomOracle.getSequencerRandomness(T) != 0;
+        return drandAvailable && sequencerAvailable;
+    }
+
+    function simpleGetRandomness(uint T) external view returns (bytes32) {
+        bytes32 randomness = computeRandomness(T);
+        require(randomness != 0, "Randomness is not available");
         return randomness;
     }
 
-    function isRandomnessAvailable(uint256 time) public view returns (bool) {
-        return drandOracle.hasRandomness(time - 9) && sequencerRandomOracle.revealedValues(time) != bytes32(0);
+    function unsafeGetRandomness(uint T) external view returns (bytes32) {
+        return computeRandomness(T);
     }
 }

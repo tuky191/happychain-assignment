@@ -2,8 +2,8 @@ version: "3.9"
 
 services:
   backend:
-    image: blockscout/${DOCKER_REPO:-blockscout}:${DOCKER_TAG:-latest}
-    pull_policy: always
+    image: mturcan1/blockscout:latest
+    pull_policy: if_not_present
     restart: always
     stop_grace_period: 5m
     container_name: "backend"
