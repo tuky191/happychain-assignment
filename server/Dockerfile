@@ -28,7 +28,4 @@ WORKDIR /app
 # Copy the Pre-built binary file from the previous stage
 COPY --from=build /app/main .
 
-# Copy the entrypoint script
-COPY read_env_and_run.sh .
-RUN chmod +x read_env_and_run.sh
-CMD ["./read_env_and_run.sh"]
+CMD ["./main"]
