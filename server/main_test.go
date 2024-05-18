@@ -1,5 +1,14 @@
 package main
 
+import (
+	"context"
+	"log"
+	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
+)
+
 // import (
 // 	"fmt"
 // 	"net/http"
@@ -90,3 +99,26 @@ package main
 // 		})
 // 	}
 // }
+
+func TestGetTransactionReceipt(t *testing.T) {
+	// Create Ethereum client
+	client, err := ethclient.Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatalf("Failed to connect to the Ethereum client: %v", err)
+	}
+
+	// Transaction hash to check
+	txHash := "0xdd8345f303b887d27b88896beaa94444cfba8c5f8e575dfdc4e2ac156e42dc09"
+
+	// Get transaction receipt
+	receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash(txHash))
+	if err != nil {
+		t.Fatalf("Failed to get transaction receipt: %v", err)
+	}
+
+	if receipt == nil {
+		t.Fatalf("Transaction receipt is nil")
+	}
+
+	log.Printf("Transaction receipt: %+v", receipt)
+}
