@@ -7,7 +7,6 @@ import (
 	"log"
 	"math"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -18,15 +17,15 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, contractAddress string, methodName string, timestamp int64, value string) {
-	tx, err := createTransaction(client, privateKey, contractAddress, methodName, timestamp, value)
+func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, contractAddress string, methodName string, contractABI abi.ABI, timestamp int64, value string) error {
+	tx, err := createTransaction(client, privateKey, contractAddress, methodName, contractABI, timestamp, value)
 	if err != nil {
-		log.Fatalf("Failed to create transaction: %v", err)
+		return fmt.Errorf("Failed to create transaction: %v", err)
 	}
 
 	signedTx, err := signAndSendTransaction(client, tx, privateKey)
 	if err != nil {
-		log.Fatalf("Failed to send transaction: %v", err)
+		return fmt.Errorf("Failed to send transaction: %v", err)
 	}
 
 	poolMutex.Lock()
@@ -42,9 +41,10 @@ func sendTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, con
 		attempts:        0,
 		initialSend:     time.Now(),
 		tx:              signedTx,
+		contractABI:     contractABI,
 	}
 	poolMutex.Unlock()
-
+	return nil
 }
 
 func signAndSendTransaction(client *ethclient.Client, tx *types.Transaction, privateKey *ecdsa.PrivateKey) (*types.Transaction, error) {
@@ -67,11 +67,7 @@ func signAndSendTransaction(client *ethclient.Client, tx *types.Transaction, pri
 	return signedTx, nil
 }
 
-func createTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, contractAddress string, methodName string, timestamp int64, value string) (*types.Transaction, error) {
-	contractABI, err := abi.JSON(strings.NewReader(`[{"constant":false,"inputs":[{"name":"timestamp","type":"uint256"},{"name":"value","type":"bytes32"}],"name":"` + methodName + `","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse contract ABI: %v", err)
-	}
+func createTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, contractAddress string, methodName string, contractABI abi.ABI, timestamp int64, value string) (*types.Transaction, error) {
 
 	fromAddress := crypto.PubkeyToAddress(privateKey.PublicKey)
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
@@ -84,8 +80,24 @@ func createTransaction(client *ethclient.Client, privateKey *ecdsa.PrivateKey, c
 		return nil, fmt.Errorf("failed to suggest gas price: %v", err)
 	}
 
-	valueBytes32 := common.HexToHash(value)
-	data, err := contractABI.Pack(methodName, big.NewInt(timestamp), valueBytes32)
+	var data []byte
+	switch methodName {
+	case "postRandomnessCommitment":
+		valueBytes32 := common.HexToHash(value)
+		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), valueBytes32)
+		log.Printf("Create transaction: method: %s, timestamp: %d, hashedValueBytes32Hex, %s, value: %s", methodName, timestamp, bufferToHex(valueBytes32[:]), value)
+	case "revealSequencerRandomness":
+		valueBytes32 := stringToBytes32(value)
+		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), valueBytes32)
+		log.Printf("Create transaction: method: %s, timestamp: %d, hashedValueBytes32Hex, %s, value: %s", methodName, timestamp, bufferToHex(valueBytes32[:]), value)
+	case "postDrandRandomness":
+		valueBytes32 := stringToBytes32(value)
+		data, err = contractABI.Pack(methodName, big.NewInt(timestamp), valueBytes32)
+		log.Printf("Create transaction: method: %s, timestamp: %d, hashedValueBytes32Hex, %s, value: %s", methodName, timestamp, bufferToHex(valueBytes32[:]), value)
+	default:
+		return nil, fmt.Errorf("Create transaction: Unknown method: %s", methodName)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to pack method call data for method %s: with value: %s, %v", methodName, value, err)
 	}
@@ -130,7 +142,7 @@ func retryTransactions() {
 			tx.lastRetry = time.Now()
 			tx.backoffDuration = time.Duration(math.Pow(2, float64(tx.attempts))) * time.Second
 
-			newTx, err := createTransaction(tx.client, tx.privateKey, tx.contractAddress, tx.methodName, tx.timestamp, tx.value)
+			newTx, err := createTransaction(tx.client, tx.privateKey, tx.contractAddress, tx.methodName, tx.contractABI, tx.timestamp, tx.value)
 			if err != nil {
 				log.Fatalf("Failed to create new transaction: %v", err)
 			}
@@ -157,7 +169,7 @@ func getRevertReason(client *ethclient.Client, tx *types.Transaction, blockNumbe
 	ctx := context.Background()
 	raw, err := client.CallContract(ctx, msg, blockNumber)
 	if err != nil {
-		return fmt.Sprintf("%v : %s", err, string(raw)), nil
+		return fmt.Sprintf("err: %v - raw: %s", err, string(raw)), nil
 	}
 
 	revertReason, err := abiUnpackRevertReason(raw)

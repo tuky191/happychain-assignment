@@ -107,6 +107,14 @@ func calculateSequencerRandomness(drandValue, commitmentValue string) (string, e
 	return solidityPackedKeccak256(types, values)
 }
 
+func calculateSequencerRandomnessHash(randomness string) (string, error) {
+	randomnessBytes32 := stringToBytes32(randomness)
+	types := []string{"bytes32"}
+	values := []interface{}{randomnessBytes32}
+
+	return solidityPackedKeccak256(types, values)
+}
+
 func generateSequencerRandom() string {
 	h := sha256.New()
 	h.Write([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
@@ -146,8 +154,25 @@ func solidityPacked(types []string, values []interface{}) ([]byte, error) {
 	return packed, nil
 }
 
-func stringToBytes32(s string) [32]byte {
-	var b [32]byte
-	copy(b[:], s)
-	return b
+// func stringToBytes32(s string) [32]byte {
+// 	var b [32]byte
+// 	copy(b[:], s)
+// 	return b
+// }
+
+// Function to hash a string to [32]byte using SHA-256
+func stringToBytes32(inputString string) [32]byte {
+
+	hash := sha256.New()
+	hash.Write([]byte(inputString))
+	hashBytes := hash.Sum(nil)
+
+	var hashArray [32]byte
+	copy(hashArray[:], hashBytes)
+
+	return hashArray
+}
+
+func bufferToHex(buffer []byte) string {
+	return "0x" + hex.EncodeToString(buffer)
 }

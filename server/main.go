@@ -3,12 +3,16 @@ package main
 import (
 	"crypto/ecdsa"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/drand/drand/client"
 	httpclient "github.com/drand/drand/client/http"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -40,6 +44,7 @@ type Transaction struct {
 	initialSend     time.Time
 	backoffDuration time.Duration
 	tx              *types.Transaction
+	contractABI     abi.ABI
 }
 
 var transactionPool = make(map[common.Hash]*Transaction)
@@ -114,62 +119,89 @@ func main() {
 		log.Printf("Current time: %d", currentTime)
 
 		if currentTime%2 == 0 {
-			sequencerRandomValue := generateSequencerRandom()
-			log.Printf("Generated sequencer random value: %s", sequencerRandomValue)
-
-			drandValue, err := getDrandValue(drandClient, currentTime-delay)
+			err := commitSequencerRandom(client, privateKey, currentTime, drandClient)
 			if err != nil {
-				log.Printf("Error fetching Drand value: %v", err)
 				continue
 			}
-			drandValueHex := hex.EncodeToString(drandValue)
-
-			randomness, err := calculateSequencerRandomness(drandValueHex, sequencerRandomValue)
-			if err != nil {
-				log.Fatalf("unable to calculate randomness, %v", err)
-			}
-			log.Printf("Generated sequencer randomness: %s", randomness)
-
-			commitments[currentTime] = randomness
-			commitSequencerRandom(client, privateKey, currentTime, randomness)
 		}
 
 		if currentTime%3 == 0 {
-			drandValue, err := getDrandValue(drandClient, currentTime)
+			err := updateDrandRandomness(client, privateKey, currentTime, drandClient)
 			if err != nil {
-				log.Printf("Error fetching Drand value: %v", err)
 				continue
 			}
-			drandValueHex := hex.EncodeToString(drandValue)
-			log.Printf("Fetched Drand value: %s", drandValueHex)
-			updateDrandRandomness(client, privateKey, currentTime, drandValueHex)
 		}
 
 		if (currentTime-precommitDelay)%2 == 0 {
-			revealTime := currentTime - precommitDelay
-			revealValue, exists := commitments[revealTime]
-			if !exists {
-				log.Printf("No committed value found for time: %d", revealTime)
+			err := revealSequencerRandom(client, privateKey, currentTime)
+			if err != nil {
+				log.Printf("revealSequencerError: %v", err)
 				continue
 			}
-			log.Printf("Revealing sequencer random value: %s for time: %d", revealValue, revealTime)
-			revealSequencerRandom(client, privateKey, revealTime, revealValue)
 		}
 	}
 
 }
 
-func revealSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, randomValue string) {
-	log.Printf("Revealing sequencer random value: %s at timestamp: %d", randomValue, timestamp)
-	sendTransaction(client, privateKey, contractAddresses.SequencerRandomOracleAddress, "revealSequencerRandomness", timestamp, randomValue)
+func revealSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKey, currentTime int64) error {
+	contractABI, err := abi.JSON(strings.NewReader(`[{"constant":false,"inputs":[{"name":"T","type":"uint256"},{"name":"randomness","type":"bytes32"}],"name":"revealSequencerRandomness","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`))
+
+	revealValue, exists := commitments[currentTime]
+	if !exists {
+		return fmt.Errorf("No committed value found for time: %d", currentTime)
+	}
+	log.Printf("Revealing sequencer random value: %s at timestamp: %d", revealValue, currentTime)
+
+	if err != nil {
+		return fmt.Errorf("failed to parse contract ABI: %v", err)
+	}
+	return sendTransaction(client, privateKey, contractAddresses.SequencerRandomOracleAddress, "revealSequencerRandomness", contractABI, currentTime, revealValue)
 }
 
-func updateDrandRandomness(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, randomValue string) {
-	log.Printf("Updating Drand value: %s at timestamp: %d", randomValue, timestamp)
-	sendTransaction(client, privateKey, contractAddresses.DrandOracleAddress, "postDrandRandomness", timestamp, randomValue)
+func commitSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKey, currentTime int64, drandClient client.Client) error {
+	sequencerRandomValue := generateSequencerRandom()
+	log.Printf("Generated sequencer random value: %s", sequencerRandomValue)
+	drandValue, err := getDrandValue(drandClient, currentTime-precommitDelay)
+	if err != nil {
+		return fmt.Errorf("Error fetching Drand value: %v", err)
+	}
+	drandValueHex := bufferToHex(drandValue)
+
+	// This generates the randomness by adding the keccak256(drandValueHex and sequencerRandomValue)
+	randomness, err := calculateSequencerRandomness(drandValueHex, sequencerRandomValue)
+	if err != nil {
+		return fmt.Errorf("unable to calculate randomness, %v", err)
+	}
+	log.Printf("Generated sequencer randomness: %s", randomness)
+	commitments[currentTime] = randomness
+
+	randomnessHash, err := calculateSequencerRandomnessHash(randomness)
+	if err != nil {
+		return fmt.Errorf("unable to calculate randomnessHash, %v", err)
+	}
+	log.Printf("Generated sequencer randomnessHash: %s for randomness: %s, randomness at timestamp: %d", randomnessHash, randomness, currentTime)
+	log.Printf("Posting commitment to contract: %s at timestamp: %d", contractAddresses.SequencerRandomOracleAddress, currentTime)
+
+	contractABI, err := abi.JSON(strings.NewReader(`[{"constant":false,"inputs":[{"name":"T","type":"uint256"},{"name":"randomnessHash","type":"bytes32"}],"name":"postRandomnessCommitment","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`))
+	if err != nil {
+		return fmt.Errorf("failed to parse contract ABI: %v", err)
+	}
+	return sendTransaction(client, privateKey, contractAddresses.SequencerRandomOracleAddress, "postRandomnessCommitment", contractABI, currentTime, randomnessHash)
 }
 
-func commitSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, randomValueHash string) {
-	log.Printf("Posting commitment to contract: %s at timestamp: %d", contractAddresses.SequencerRandomOracleAddress, timestamp)
-	sendTransaction(client, privateKey, contractAddresses.SequencerRandomOracleAddress, "postRandomnessCommitment", timestamp, randomValueHash)
+func updateDrandRandomness(client *ethclient.Client, privateKey *ecdsa.PrivateKey, currentTime int64, drandClient client.Client) error {
+
+	randomValue, err := getDrandValue(drandClient, currentTime)
+	if err != nil {
+		return fmt.Errorf("Error fetching Drand value: %v", err)
+	}
+	randomValueHex := bufferToHex(randomValue)
+	log.Printf("Fetched Drand value: %s", randomValueHex)
+	log.Printf("Updating Drand value: %s at timestamp: %d", randomValueHex, currentTime)
+
+	contractABI, err := abi.JSON(strings.NewReader(`[{"constant":false,"inputs":[{"name":"T","type":"uint256"},{"name":"randomness","type":"bytes32"}],"name":"postDrandRandomness","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`))
+	if err != nil {
+		return fmt.Errorf("failed to parse contract ABI: %v", err)
+	}
+	return sendTransaction(client, privateKey, contractAddresses.DrandOracleAddress, "postDrandRandomness", contractABI, currentTime, randomValueHex)
 }

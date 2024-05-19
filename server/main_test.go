@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
+	"fmt"
 	"log"
+	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/assert"
 )
@@ -110,7 +113,7 @@ func TestGetTransactionReceipt(t *testing.T) {
 	}
 
 	// Transaction hash to check
-	txHash := "0xdd8345f303b887d27b88896beaa94444cfba8c5f8e575dfdc4e2ac156e42dc09"
+	txHash := "0xe6f54e8cb726359395baaab8d3dfe207eae7d1c26244d171cfa14ecd7331b8c9"
 
 	// Get transaction receipt
 	receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash(txHash))
@@ -128,18 +131,69 @@ func TestGetTransactionReceipt(t *testing.T) {
 // solidityPackedKeccak256 hashes the packed Solidity values using Keccak-256
 
 func TestSolidityPackedKeccak256(t *testing.T) {
-	input := "randomness"
-	expectedBytes32 := "72616e646f6d6e65737300000000000000000000000000000000000000000000"
-	expectedHash := "0xc8fcc37de2a2c63bda685088cc2cbc983e9210f4a2c941de0ac6f35a4d09efce" // Change this to match the expected hash
+	input := "0xa8774c23cf38bbba005f2a4318cb56aba6a08c7b4e75dd8b6827e10b188e5400"
+	expectedBytes32Hex := "0x767b8f9294d1ba38d120c16ee7c354ec58fd89d8d42cc4a9a3c70e74ed04f0cd"
+	expectedHash := "0x30d109baad1c2d0db758043170cee40f9306645f6b8d75355b22a5e62845035f" // Change this to match the expected hash
 
 	bytes32Value := stringToBytes32(input)
-	bytes32Hex := hex.EncodeToString(bytes32Value[:])
-	assert.Equal(t, expectedBytes32, bytes32Hex, "Bytes32 value should match expected")
+	bytes32Hex := bufferToHex(bytes32Value[:])
+	assert.Equal(t, expectedBytes32Hex, bytes32Hex, "Bytes32 value should match expected")
 
 	types := []string{"bytes32"}
 	values := []interface{}{bytes32Value}
-
+	contractABI, err := abi.JSON(strings.NewReader(`[{"constant":false,"inputs":[{"name":"T","type":"uint256"},{"name":"randomnessHash","type":"bytes32"}],"name":"postRandomnessCommitment","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`))
+	fmt.Print(contractABI.Methods)
 	hash, err := solidityPackedKeccak256(types, values)
 	assert.NoError(t, err, "Error should be nil")
 	assert.Equal(t, expectedHash, hash, "Hash should match expected")
+}
+
+func TestCreateTransactionReveal(t *testing.T) {
+	// Setup
+	privateKey, err := crypto.GenerateKey()
+	assert.NoError(t, err, "Failed to generate private key")
+
+	client, err := ethclient.Dial("http://localhost:8545")
+	assert.NoError(t, err, "Failed to connect to the Ethereum client")
+
+	contractAddress := "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+	contractABI, err := abi.JSON(strings.NewReader(`[{"constant":true,"inputs":[{"name":"_timestamp","type":"uint256"},{"name":"_value","type":"bytes32"}],"name":"revealSequencerRandomness","outputs":[],"payable":false,"stateMutability":"view","type":"function"}]`))
+	assert.NoError(t, err, "Failed to parse contract ABI")
+
+	timestamp := int64(1234567890)
+	value := "0xaff07feb058c3908335b80f307a0f0b6e45a45ff17437ea0e2ceec940ce9dd65"
+
+	// Execute
+	tx, err := createTransaction(client, privateKey, contractAddress, "revealSequencerRandomness", contractABI, timestamp, value)
+	assert.NoError(t, err, "Failed to create transaction")
+
+	// Validate
+	assert.NotNil(t, tx, "Transaction should not be nil")
+	assert.Equal(t, uint64(3000000), tx.Gas())
+	assert.Equal(t, common.HexToAddress(contractAddress), *tx.To())
+}
+
+func TestCreateTransactionCommit(t *testing.T) {
+	// Setup
+	privateKey, err := crypto.GenerateKey()
+	assert.NoError(t, err, "Failed to generate private key")
+
+	client, err := ethclient.Dial("http://localhost:8545")
+	assert.NoError(t, err, "Failed to connect to the Ethereum client")
+
+	contractAddress := "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+	contractABI, err := abi.JSON(strings.NewReader(`[{"constant":true,"inputs":[{"name":"_timestamp","type":"uint256"},{"name":"_value","type":"bytes32"}],"name":"postRandomnessCommitment","outputs":[],"payable":false,"stateMutability":"view","type":"function"}]`))
+	assert.NoError(t, err, "Failed to parse contract ABI")
+
+	timestamp := int64(1234567890)
+	value := "0xa9cc7948e824bf6db251ba79694ea3ff4953d52f66ac2dea7b431f8bab2d070c"
+
+	// Execute
+	tx, err := createTransaction(client, privateKey, contractAddress, "postRandomnessCommitment", contractABI, timestamp, value)
+	assert.NoError(t, err, "Failed to create transaction")
+
+	// Validate
+	assert.NotNil(t, tx, "Transaction should not be nil")
+	assert.Equal(t, uint64(3000000), tx.Gas())
+	assert.Equal(t, common.HexToAddress(contractAddress), *tx.To())
 }
