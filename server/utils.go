@@ -16,6 +16,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
 	"github.com/drand/drand/client"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	bip39 "github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/sha3"
@@ -95,14 +97,57 @@ func keccak256(data []byte) []byte {
 	return hash.Sum(nil)
 }
 
-func calculateRandomness(drandValue, commitmentValue string) string {
-	combined := []byte(drandValue + commitmentValue)
-	hash := keccak256(combined)
-	return hex.EncodeToString(hash)
+func calculateSequencerRandomness(drandValue, commitmentValue string) (string, error) {
+	drandBytes32 := stringToBytes32(drandValue)
+	commitmentBytes32 := stringToBytes32(commitmentValue)
+
+	types := []string{"bytes32", "bytes32"}
+	values := []interface{}{drandBytes32, commitmentBytes32}
+
+	return solidityPackedKeccak256(types, values)
 }
 
 func generateSequencerRandom() string {
 	h := sha256.New()
 	h.Write([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func solidityPackedKeccak256(types []string, values []interface{}) (string, error) {
+	if len(types) != len(values) {
+		return "", fmt.Errorf("types and values must have the same length")
+	}
+
+	packed, err := solidityPacked(types, values)
+	if err != nil {
+		return "", err
+	}
+
+	hash := crypto.Keccak256(packed)
+	return hexutil.Encode(hash), nil
+}
+
+// solidityPacked packs the values according to Solidity's abi.encodePacked
+func solidityPacked(types []string, values []interface{}) ([]byte, error) {
+	arguments := make(abi.Arguments, len(types))
+	for i, typ := range types {
+		argType, err := abi.NewType(typ, "", nil)
+		if err != nil {
+			return nil, err
+		}
+		arguments[i] = abi.Argument{Type: argType}
+	}
+
+	packed, err := arguments.PackValues(values)
+	if err != nil {
+		return nil, err
+	}
+
+	return packed, nil
+}
+
+func stringToBytes32(s string) [32]byte {
+	var b [32]byte
+	copy(b[:], s)
+	return b
 }

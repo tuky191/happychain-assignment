@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.24;
 
 contract SequencerRandomOracle {
     uint constant PRECOMMIT_DELAY = 10; // blocks, for testing purposes
@@ -14,12 +14,20 @@ contract SequencerRandomOracle {
 
     mapping(uint => SequencerEntry) public sequencerEntries;
 
+    error SequencerEntryAlreadyCommitted();
+    error SequencerRandomnessNotCommitted();
+    error PrecommitDelayNotPassed();
+    error SequencerRandomnessAlreadyRevealed();
+    error InvalidRandomnessReveal(bytes32 expected, bytes32 actual);
+
     event SequencerRandomnessPosted(uint indexed T, bytes32 randomnessHash);
     event SequencerRandomnessRevealed(uint indexed T, bytes32 randomness);
 
     function postRandomnessCommitment(uint T, bytes32 randomnessHash) external {
         SequencerEntry storage entry = sequencerEntries[T];
-        require(!entry.committed, "Sequencer entry already committed");
+        if (entry.committed) {
+            revert SequencerEntryAlreadyCommitted();
+        }
 
         entry.randomnessHash = randomnessHash;
         entry.blockNumber = block.number;
@@ -31,10 +39,20 @@ contract SequencerRandomOracle {
 
     function revealSequencerRandomness(uint T, bytes32 randomness) external {
         SequencerEntry storage entry = sequencerEntries[T];
-        require(entry.committed, "Sequencer randomness not committed");
-        require(block.number > entry.blockNumber + PRECOMMIT_DELAY, "Precommit delay not passed");
-        require(!entry.revealed, "Sequencer randomness already revealed");
-        require(entry.randomnessHash == keccak256(abi.encodePacked(randomness)), "Invalid randomness reveal");
+        if (!entry.committed) {
+            revert SequencerRandomnessNotCommitted();
+        }
+        if (block.number <= entry.blockNumber + PRECOMMIT_DELAY) {
+            revert PrecommitDelayNotPassed();
+        }
+        if (entry.revealed) {
+            revert SequencerRandomnessAlreadyRevealed();
+        }
+
+        bytes32 computedHash = keccak256(abi.encodePacked(randomness));
+        if (entry.randomnessHash != computedHash) {
+            revert InvalidRandomnessReveal(entry.randomnessHash, computedHash);
+        }
 
         entry.randomness = randomness;
         entry.revealed = true;

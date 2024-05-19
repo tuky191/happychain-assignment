@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"encoding/hex"
 	"log"
 	"net/http"
@@ -117,8 +116,22 @@ func main() {
 		if currentTime%2 == 0 {
 			sequencerRandomValue := generateSequencerRandom()
 			log.Printf("Generated sequencer random value: %s", sequencerRandomValue)
-			commitments[currentTime] = sequencerRandomValue
-			commitSequencerRandom(client, privateKey, currentTime, sequencerRandomValue)
+
+			drandValue, err := getDrandValue(drandClient, currentTime-delay)
+			if err != nil {
+				log.Printf("Error fetching Drand value: %v", err)
+				continue
+			}
+			drandValueHex := hex.EncodeToString(drandValue)
+
+			randomness, err := calculateSequencerRandomness(drandValueHex, sequencerRandomValue)
+			if err != nil {
+				log.Fatalf("unable to calculate randomness, %v", err)
+			}
+			log.Printf("Generated sequencer randomness: %s", randomness)
+
+			commitments[currentTime] = randomness
+			commitSequencerRandom(client, privateKey, currentTime, randomness)
 		}
 
 		if currentTime%3 == 0 {
@@ -141,16 +154,6 @@ func main() {
 			}
 			log.Printf("Revealing sequencer random value: %s for time: %d", revealValue, revealTime)
 			revealSequencerRandom(client, privateKey, revealTime, revealValue)
-
-			// Calculate randomness(T)
-			drandValue, err := getDrandValue(drandClient, revealTime)
-			if err != nil {
-				log.Printf("Error fetching Drand value for randomness calculation: %v", err)
-				continue
-			}
-			drandValueHex := hex.EncodeToString(drandValue)
-			randomness := calculateRandomness(drandValueHex, revealValue)
-			log.Printf("Calculated randomness for time %d: %s", revealTime, randomness)
 		}
 	}
 
@@ -161,13 +164,12 @@ func revealSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKe
 	sendTransaction(client, privateKey, contractAddresses.SequencerRandomOracleAddress, "revealSequencerRandomness", timestamp, randomValue)
 }
 
-func updateDrandRandomness(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, value string) {
-	log.Printf("Updating Drand value: %s at timestamp: %d", value, timestamp)
-	sendTransaction(client, privateKey, contractAddresses.DrandOracleAddress, "postDrandRandomness", timestamp, value)
+func updateDrandRandomness(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, randomValue string) {
+	log.Printf("Updating Drand value: %s at timestamp: %d", randomValue, timestamp)
+	sendTransaction(client, privateKey, contractAddresses.DrandOracleAddress, "postDrandRandomness", timestamp, randomValue)
 }
 
-func commitSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, randomValue string) {
-	commitment := sha256.Sum256([]byte(randomValue))
+func commitSequencerRandom(client *ethclient.Client, privateKey *ecdsa.PrivateKey, timestamp int64, randomValueHash string) {
 	log.Printf("Posting commitment to contract: %s at timestamp: %d", contractAddresses.SequencerRandomOracleAddress, timestamp)
-	sendTransaction(client, privateKey, contractAddresses.SequencerRandomOracleAddress, "postRandomnessCommitment", timestamp, hex.EncodeToString(commitment[:]))
+	sendTransaction(client, privateKey, contractAddresses.SequencerRandomOracleAddress, "postRandomnessCommitment", timestamp, randomValueHash)
 }

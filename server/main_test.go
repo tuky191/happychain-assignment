@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"log"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/stretchr/testify/assert"
 )
 
 // import (
@@ -121,4 +123,23 @@ func TestGetTransactionReceipt(t *testing.T) {
 	}
 
 	log.Printf("Transaction receipt: %+v", receipt)
+}
+
+// solidityPackedKeccak256 hashes the packed Solidity values using Keccak-256
+
+func TestSolidityPackedKeccak256(t *testing.T) {
+	input := "randomness"
+	expectedBytes32 := "72616e646f6d6e65737300000000000000000000000000000000000000000000"
+	expectedHash := "0xc8fcc37de2a2c63bda685088cc2cbc983e9210f4a2c941de0ac6f35a4d09efce" // Change this to match the expected hash
+
+	bytes32Value := stringToBytes32(input)
+	bytes32Hex := hex.EncodeToString(bytes32Value[:])
+	assert.Equal(t, expectedBytes32, bytes32Hex, "Bytes32 value should match expected")
+
+	types := []string{"bytes32"}
+	values := []interface{}{bytes32Value}
+
+	hash, err := solidityPackedKeccak256(types, values)
+	assert.NoError(t, err, "Error should be nil")
+	assert.Equal(t, expectedHash, hash, "Hash should match expected")
 }

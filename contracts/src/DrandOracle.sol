@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
-
+pragma solidity ^0.8.24;
+// import "hardhat/console.sol";
 contract DrandOracle {
     uint constant TIMEOUT = 10; // seconds, for testing purposes
 
@@ -15,6 +15,7 @@ contract DrandOracle {
     event DrandUpdated(uint indexed T, bytes32 randomness);
     
     function postDrandRandomness(uint T, bytes32 randomness) external {
+    // console.log("block.timestamp: %s, T: %s, TIMEOUT: %s", block.timestamp, T, TIMEOUT);
         require(block.timestamp <= T + TIMEOUT, "Update period has expired");
 
         DrandEntry storage entry = drandEntries[T];
