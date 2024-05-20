@@ -45,3 +45,12 @@ http://localhost
 ```bash
 docker logs demo -f
 ```
+
+### 5. Contracts
+
+Contracts were developed in separate repository
+
+1. Clone the repo ```git clone https://github.com/tuky191/happychain-contracts```
+2. Install dependencies ```npm install```
+3. Run tests ```npx hardhat test```
+   
