@@ -42,7 +42,7 @@ docker compose up -d
 #### Access Blockscout
 http://localhost
 
-#### Check output of demo contaier
+#### Check output of demo container
 ```bash
 docker logs demo -f
 ```
