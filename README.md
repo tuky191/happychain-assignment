@@ -16,7 +16,7 @@ To access private repositories and perform actions on behalf of your account, yo
 2. Navigate to **Developer settings** > **Personal access tokens**.
 3. Click **Generate new token**. Use Classic token.
 4. Give your token a descriptive name.
-5. Select the permissions  ```delete:packages, repo, write:packages```
+5. Select the permissions  ```delete:packages, repo, write:packages, read:packages```
 6. Click **Generate token** and copy the token.
 
 ### 2. Login to GitHub
