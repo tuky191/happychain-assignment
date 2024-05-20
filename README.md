@@ -33,7 +33,8 @@ Clone the repository and navigate to the project directory:
 ```bash
 git clone https://github.com/tuky191/happychain-assignment.git
 cd happychain-assignment
-docker-compose up -d
+docker compose build
+docker compose up -d
 ```
 
 ### 4. Demo
