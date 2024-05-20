@@ -47,7 +47,23 @@ services:
       anvil:
         condition: service_started
       init:
-        condition: service_completed_successfully
+        condition: service_started
+
+  demo:
+    container_name: demo
+    #command: ["tail", "-f", "/dev/null"]
+    build: ./demo
+    restart: always
+    volumes:
+      - shared:/app/shared
+    environment:
+      - ANVIL_URL=http://anvil:8545
+      - MNEMONIC=test test test test test test test test test test test junk
+    depends_on:
+      anvil:
+        condition: service_started
+      server:
+        condition: service_started
 
   redis-db:
     extends:

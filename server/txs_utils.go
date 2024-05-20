@@ -149,7 +149,8 @@ func retryTransactions() {
 
 			signedTx, err := signAndSendTransaction(tx.client, newTx, tx.privateKey)
 			if err != nil {
-				log.Fatalf("Failed to resend transaction: %v", err)
+				fmt.Printf("Failed to resend transaction: %v", err)
+				continue
 			}
 			log.Printf("Resent transaction: %s with method: %s (attempt %d)", signedTx.Hash().Hex(), tx.methodName, tx.attempts)
 			tx.txHash = signedTx.Hash()
