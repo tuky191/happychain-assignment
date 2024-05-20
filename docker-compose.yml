@@ -39,7 +39,7 @@ services:
       - ANVIL_URL=http://anvil:8545
       - MNEMONIC=test test test test test test test test test test test junk
       - DELAY=9
-      - PRECOMMIT_DELAY=10
+      - PRECOMMIT_DELAY=12
       - DRAND_INTERVAL=3
       - DRAND_GENESIS=1677685200
       - DRAND_CHAIN_HASH=dbd506d6ef76e5f386f41c651dcb808c5bcbd75471cc4eafa3f4df7ad4e4c493
