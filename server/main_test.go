@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -105,6 +106,22 @@ import (
 // 	}
 // }
 
+func TestGetRevertReason(t *testing.T) {
+	client, err := ethclient.Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatalf("Failed to connect to the Ethereum client: %v", err)
+	}
+
+	txHash := common.HexToHash("0xfdb1cf0628337db9814b88cf95b1ee376ed53fdfbea5ae11ea6e24771eae58aa")
+	// Get transaction receipt
+	tx, isPending, err := client.TransactionByHash(context.Background(), txHash)
+	if err != nil {
+		log.Fatalf("Failed to get transaction by hash: %v", err)
+	}
+	spew.Dump(tx)
+	spew.Dump(isPending)
+}
+
 func TestGetTransactionReceipt(t *testing.T) {
 	// Create Ethereum client
 	client, err := ethclient.Dial("http://localhost:8545")
@@ -113,7 +130,7 @@ func TestGetTransactionReceipt(t *testing.T) {
 	}
 
 	// Transaction hash to check
-	txHash := "0xe6f54e8cb726359395baaab8d3dfe207eae7d1c26244d171cfa14ecd7331b8c9"
+	txHash := "0x0dd8cf485b7461c66503cf8a6347d5114841be69135eaee9cfa53a430cb839fd"
 
 	// Get transaction receipt
 	receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash(txHash))
@@ -124,7 +141,6 @@ func TestGetTransactionReceipt(t *testing.T) {
 	if receipt == nil {
 		t.Fatalf("Transaction receipt is nil")
 	}
-
 	log.Printf("Transaction receipt: %+v", receipt)
 }
 

@@ -116,7 +116,10 @@ func retryTransactions() {
 			continue
 		}
 		receipt, err := tx.client.TransactionReceipt(context.Background(), tx.txHash)
-
+		if receipt == nil {
+			log.Printf("transaction %s is pending", tx.txHash)
+			continue
+		}
 		// Check if it's time for the next retry
 		if time.Since(tx.lastRetry) >= tx.backoffDuration {
 			customHash := generateCustomHash(tx.methodName, tx.timestamp, tx.value)
@@ -126,7 +129,7 @@ func retryTransactions() {
 				continue
 			}
 
-			revertReason, err := getRevertReason(tx.client, tx.tx, receipt.BlockNumber)
+			revertReason, err := getRevertReason(tx.client, tx, receipt.BlockNumber)
 			if err != nil {
 				log.Fatalf("Failed to get revert reason for %s: %v", tx.txHash.Hex(), err)
 			}
@@ -160,11 +163,10 @@ func retryTransactions() {
 	}
 }
 
-func getRevertReason(client *ethclient.Client, tx *types.Transaction, blockNumber *big.Int) (string, error) {
-
+func getRevertReason(client *ethclient.Client, tx *Transaction, blockNumber *big.Int) (string, error) {
 	msg := ethereum.CallMsg{
-		To:   tx.To(),
-		Data: tx.Data(),
+		To:   tx.tx.To(),
+		Data: tx.tx.Data(),
 	}
 
 	ctx := context.Background()

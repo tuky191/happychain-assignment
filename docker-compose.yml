@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   anvil:
-    image: ghcr.io/foundry-rs/foundry:latest
+    image: mturcan1/foundry:latest
     container_name: anvil
     platform: linux/amd64
     volumes:
@@ -47,7 +47,7 @@ services:
       anvil:
         condition: service_started
       init:
-        condition: service_started
+        condition: service_completed_successfully
 
   demo:
     container_name: demo
