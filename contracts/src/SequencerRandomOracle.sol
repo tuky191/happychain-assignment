@@ -44,7 +44,7 @@ contract SequencerRandomOracle is Ownable {
             revert SequencerRandomnessNotCommitted(T);
         }
         uint requiredBlock = entry.blockNumber + PRECOMMIT_DELAY;
-        if (block.number <= requiredBlock) {
+        if (block.number < requiredBlock) {
             revert PrecommitDelayNotPassed(T, block.number, requiredBlock, entry.blockNumber);
         }
         if (entry.revealed) {

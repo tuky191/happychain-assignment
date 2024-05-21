@@ -38,11 +38,16 @@ services:
     environment:
       - ANVIL_URL=http://anvil:8545
       - MNEMONIC=test test test test test test test test test test test junk
-      - DELAY=9
-      - PRECOMMIT_DELAY=12
+      - PRECOMMIT_DELAY=20
       - DRAND_INTERVAL=3
       - DRAND_GENESIS=1677685200
       - DRAND_CHAIN_HASH=dbd506d6ef76e5f386f41c651dcb808c5bcbd75471cc4eafa3f4df7ad4e4c493
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x ./main || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
     depends_on:
       anvil:
         condition: service_started
@@ -51,7 +56,6 @@ services:
 
   demo:
     container_name: demo
-    #command: ["tail", "-f", "/dev/null"]
     build: ./demo
     restart: always
     volumes:
@@ -60,10 +64,8 @@ services:
       - ANVIL_URL=http://anvil:8545
       - MNEMONIC=test test test test test test test test test test test junk
     depends_on:
-      anvil:
-        condition: service_started
       server:
-        condition: service_started
+        condition: service_healthy
 
   redis-db:
     extends:
@@ -84,7 +86,6 @@ services:
       service: db
 
   backend:
-    #command: ["tail", "-f", "/dev/null"]
     depends_on:
       - db
       - redis-db
