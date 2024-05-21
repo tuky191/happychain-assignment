@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -106,22 +107,6 @@ import (
 // 	}
 // }
 
-func TestGetRevertReason(t *testing.T) {
-	client, err := ethclient.Dial("http://localhost:8545")
-	if err != nil {
-		t.Fatalf("Failed to connect to the Ethereum client: %v", err)
-	}
-
-	txHash := common.HexToHash("0xfdb1cf0628337db9814b88cf95b1ee376ed53fdfbea5ae11ea6e24771eae58aa")
-	// Get transaction receipt
-	tx, isPending, err := client.TransactionByHash(context.Background(), txHash)
-	if err != nil {
-		log.Fatalf("Failed to get transaction by hash: %v", err)
-	}
-	spew.Dump(tx)
-	spew.Dump(isPending)
-}
-
 func TestGetTransactionReceipt(t *testing.T) {
 	// Create Ethereum client
 	client, err := ethclient.Dial("http://localhost:8545")
@@ -212,4 +197,71 @@ func TestCreateTransactionCommit(t *testing.T) {
 	assert.NotNil(t, tx, "Transaction should not be nil")
 	assert.Equal(t, uint64(3000000), tx.Gas())
 	assert.Equal(t, common.HexToAddress(contractAddress), *tx.To())
+}
+
+func TestGetRevertReason(t *testing.T) {
+	client, err := ethclient.Dial("http://localhost:8545")
+	if err != nil {
+		t.Fatalf("Failed to connect to the Ethereum client: %v", err)
+	}
+
+	txHash := common.HexToHash("0xcbfc5a38002fe09909596d813aa9637b62cf217bac4a9439bc454ea0a610f81e")
+	// Get transaction receipt
+	tx, _, err := client.TransactionByHash(context.Background(), txHash)
+	if err != nil {
+		log.Fatalf("Failed to get transaction by hash: %v", err)
+	}
+	block := big.NewInt(8339)
+	revertReason, err := getRevertReason(client, tx, block)
+	fmt.Printf("%s", revertReason)
+}
+
+func TestDecodeCustomError(t *testing.T) {
+	// Example error data for the known errors
+	testCases := []struct {
+		name      string
+		data      string
+		expected  string
+		expectErr bool
+	}{
+		{
+			name:     "SequencerEntryAlreadyCommitted",
+			data:     "0x00002495",
+			expected: `Error: SequencerEntryAlreadyCommitted, Values: {}`,
+		},
+		{
+			name:     "SequencerRandomnessNotCommitted",
+			data:     "0x38401d6c0000000000000000000000000000000000000000000000000000000000000002",
+			expected: `Error: SequencerRandomnessNotCommitted, Values: {"T":2}`,
+		},
+		{
+			name:     "PrecommitDelayNotPassed",
+			data:     "0xda70d14500000000000000000000000000000000000000000000000000000000664c429600000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000c",
+			expected: `Error: PrecommitDelayNotPassed, Values: {"T":1716273814,"committedBlock":12,"currentBlock":18,"requiredBlock":22}`,
+		},
+		{
+			name:     "SequencerRandomnessAlreadyRevealed",
+			data:     "0xc6b108280000000000000000000000000000000000000000000000000000000000000001",
+			expected: `Error: SequencerRandomnessAlreadyRevealed, Values: {"T":1}`,
+		},
+		{
+			name:     "InvalidRandomnessReveal",
+			data:     "0x0267bee865787065637465644861736856616c7565000000000000000000000000000000636f6d70757465644861736856616c7565000000000000000000000000000000",
+			expected: `Error: InvalidRandomnessReveal, Values: {"computedHash":"computedHashValue","expectedHash":"expectedHashValue"}`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := decodeCustomError(tc.data)
+			if (err != nil) != tc.expectErr {
+				t.Fatalf("expected error: %v, got: %v", tc.expectErr, err)
+			}
+			if result != tc.expected {
+				spew.Dump(tc.expected)
+				spew.Dump(result)
+				t.Errorf("expected result: %s, got: %s", tc.expected, result)
+			}
+		})
+	}
 }

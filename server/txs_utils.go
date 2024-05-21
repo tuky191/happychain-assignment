@@ -115,13 +115,25 @@ func retryTransactions() {
 		if tx.attempts == 0 && time.Since(tx.initialSend) < 10*time.Second {
 			continue
 		}
-		receipt, err := tx.client.TransactionReceipt(context.Background(), tx.txHash)
-		if receipt == nil {
+
+		_, isPending, err := tx.client.TransactionByHash(context.Background(), tx.txHash)
+		if err != nil {
+			log.Printf("Failed to get transaction by hash: %v", err)
+			continue
+		}
+
+		if isPending {
 			log.Printf("transaction %s is pending", tx.txHash)
 			continue
 		}
+
 		// Check if it's time for the next retry
 		if time.Since(tx.lastRetry) >= tx.backoffDuration {
+			receipt, err := tx.client.TransactionReceipt(context.Background(), tx.txHash)
+			if receipt == nil {
+				continue
+			}
+
 			customHash := generateCustomHash(tx.methodName, tx.timestamp, tx.value)
 			if err == nil && receipt.Status == types.ReceiptStatusSuccessful {
 				log.Printf("Transaction %s with method %s was successful", tx.txHash.Hex(), tx.methodName)
@@ -129,11 +141,13 @@ func retryTransactions() {
 				continue
 			}
 
-			revertReason, err := getRevertReason(tx.client, tx, receipt.BlockNumber)
+			revertReason, err := getRevertReason(tx.client, tx.tx, receipt.BlockNumber)
 			if err != nil {
 				log.Fatalf("Failed to get revert reason for %s: %v", tx.txHash.Hex(), err)
 			}
+
 			log.Printf("Tx: %s, failed with revert reason: %s", tx.txHash.Hex(), revertReason)
+
 			if tx.attempts >= 3 {
 				log.Printf("Transaction %s with method %s failed after %d attempts", tx.txHash.Hex(), tx.methodName, tx.attempts)
 				delete(transactionPool, common.HexToHash(customHash))
@@ -163,19 +177,30 @@ func retryTransactions() {
 	}
 }
 
-func getRevertReason(client *ethclient.Client, tx *Transaction, blockNumber *big.Int) (string, error) {
-	msg := ethereum.CallMsg{
-		To:   tx.tx.To(),
-		Data: tx.tx.Data(),
-	}
+func getRevertReason(client *ethclient.Client, tx *types.Transaction, blockNumber *big.Int) (string, error) {
 
-	ctx := context.Background()
-	raw, err := client.CallContract(ctx, msg, blockNumber)
+	from, err := types.Sender(types.LatestSignerForChainID(tx.ChainId()), tx)
 	if err != nil {
-		return fmt.Sprintf("err: %v - raw: %s", err, string(raw)), nil
+		return "", fmt.Errorf("unable to get sender, %v", err)
+	}
+	msg := ethereum.CallMsg{
+		To:   tx.To(),
+		Data: tx.Data(),
+		From: from,
+	}
+	ctx := context.Background()
+	_, err = client.CallContract(ctx, msg, blockNumber)
+	var errorData string
+	if err != nil {
+		jsonErr, ok := err.(JsonError)
+		if ok {
+			errorData = jsonErr.ErrorData().(string)
+		} else {
+			return "", fmt.Errorf("non-json error: %s", err)
+		}
 	}
 
-	revertReason, err := abiUnpackRevertReason(raw)
+	revertReason, err := decodeCustomError(errorData)
 	if err != nil {
 		return "", fmt.Errorf("failed to unpack revert reason: %v", err)
 	}
@@ -183,6 +208,10 @@ func getRevertReason(client *ethclient.Client, tx *Transaction, blockNumber *big
 	return revertReason, nil
 }
 
+// curl -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_call","params": [{"from": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266","to": "0x1f2c6e90f3df741e0191eabb1170f0b9673f12b3","gas": "0x2dc6c0","gasPrice": "0x3b9aca07","value": "0x0","data": "0x90095e9d00000000000000000000000000000000000000000000000000000000664c83982c8b5307f3dfb5f32fe626f23be4dabbd607f217a19511a67ad101dc4a06e04c"}, "0x2093"],"id":1}' http://localhost:8545
+// curl -X POST -H "Content-Type: application/json" --data "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"eth_call\",\"params\":[{\"from\":\"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\",\"input\":\"0x90095e9d00000000000000000000000000000000000000000000000000000000664c83982c8b5307f3dfb5f32fe626f23be4dabbd607f217a19511a67ad101dc4a06e04c\",\"to\":\"0x1f2c6e90f3df741e0191eabb1170f0b9673f12b3\"},\"0x2093\"]}" http://localhost:8545
+
+// curl -X POST -H "Content-Type: application/json" --data "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"eth_call\",\"params\":[{\"from\":\"0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266\",\"input\":\"0x90095e9d00000000000000000000000000000000000000000000000000000000664c83982c8b5307f3dfb5f32fe626f23be4dabbd607f217a19511a67ad101dc4a06e04c\",\"to\":\"0x1f2c6e90f3df741e0191eabb1170f0b9673f12b3\"},\"0x2093\"]}" http://localhost:8545 | jq .
 func abiUnpackRevertReason(data []byte) (string, error) {
 	if len(data) < 4 || data[0] != 0x08 || data[1] != 0xc3 || data[2] != 0x79 || data[3] != 0xa0 {
 		return "", fmt.Errorf("not a revert reason")
