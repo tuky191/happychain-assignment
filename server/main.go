@@ -63,6 +63,20 @@ var (
 	revealTimestamps  = make(map[int64]int64)
 )
 
+var abiErrorMappings = map[string]string{
+	"SequencerEntryAlreadyCommitted":     `[{"inputs":[],"name":"SequencerEntryAlreadyCommitted","type":"error"}]`,
+	"SequencerRandomnessNotCommitted":    `[{"inputs":[{"internalType":"uint256","name":"T","type":"uint256"}],"name":"SequencerRandomnessNotCommitted","type":"error"}]`,
+	"PrecommitDelayNotPassed":            `[{"inputs":[{"internalType":"uint256","name":"T","type":"uint256"},{"internalType":"uint256","name":"currentBlock","type":"uint256"},{"internalType":"uint256","name":"requiredBlock","type":"uint256"},{"internalType":"uint256","name":"committedBlock","type":"uint256"}],"name":"PrecommitDelayNotPassed","type":"error"}]`,
+	"SequencerRandomnessAlreadyRevealed": `[{"inputs":[{"internalType":"uint256","name":"T","type":"uint256"}],"name":"SequencerRandomnessAlreadyRevealed","type":"error"}]`,
+	"InvalidRandomnessReveal":            `[{"inputs":[{"internalType":"bytes32","name":"expectedHash","type":"bytes32"},{"internalType":"bytes32","name":"computedHash","type":"bytes32"}],"name":"InvalidRandomnessReveal","type":"error"}]`,
+}
+
+type JsonError interface {
+	Error() string
+	ErrorCode() int
+	ErrorData() interface{}
+}
+
 func startConfirmationWorker() {
 	go func() {
 		for {

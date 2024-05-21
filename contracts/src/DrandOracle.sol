@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 // import "hardhat/console.sol";
-contract DrandOracle {
+import  {Ownable} from "../node_modules/@openzeppelin/contracts/access/Ownable.sol";
+
+contract DrandOracle is Ownable {
     uint constant TIMEOUT = 10; // seconds, for testing purposes
 
     struct DrandEntry {
@@ -9,12 +11,13 @@ contract DrandOracle {
         uint timestamp;
         bool filled;
     }
+    constructor() Ownable(msg.sender) {}
 
     mapping(uint => DrandEntry) public drandEntries;
 
     event DrandUpdated(uint indexed T, bytes32 randomness);
     
-    function postDrandRandomness(uint T, bytes32 randomness) external {
+    function postDrandRandomness(uint T, bytes32 randomness) external onlyOwner{
     // console.log("block.timestamp: %s, T: %s, TIMEOUT: %s", block.timestamp, T, TIMEOUT);
         require(block.timestamp <= T + TIMEOUT, "Update period has expired");
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
-
-contract SequencerRandomOracle {
+import  {Ownable} from "../node_modules/@openzeppelin/contracts/access/Ownable.sol";
+contract SequencerRandomOracle is Ownable {
     uint constant PRECOMMIT_DELAY = 10; // blocks, for testing purposes
 
     struct SequencerEntry {
@@ -11,16 +11,20 @@ contract SequencerRandomOracle {
         bool committed;
         bool revealed;
     }
+    constructor() Ownable(msg.sender) {}
 
     mapping(uint => SequencerEntry) public sequencerEntries;
 
     error SequencerEntryAlreadyCommitted();
-    error InvalidRandomnessReveal(bytes32 expected, bytes32 actual);
+    error SequencerRandomnessNotCommitted(uint T);
+    error PrecommitDelayNotPassed(uint T, uint currentBlock, uint requiredBlock, uint committedBlock);
+    error SequencerRandomnessAlreadyRevealed(uint T);
+    error InvalidRandomnessReveal(bytes32 expectedHash, bytes32 computedHash);
 
     event SequencerRandomnessPosted(uint indexed T, bytes32 randomnessHash);
     event SequencerRandomnessRevealed(uint indexed T, bytes32 randomness);
 
-    function postRandomnessCommitment(uint T, bytes32 randomnessHash) external {
+    function postRandomnessCommitment(uint T, bytes32 randomnessHash) external onlyOwner {
         SequencerEntry storage entry = sequencerEntries[T];
         if (entry.committed) {
             revert SequencerEntryAlreadyCommitted();
@@ -34,16 +38,17 @@ contract SequencerRandomOracle {
         emit SequencerRandomnessPosted(T, randomnessHash);
     }
 
-    function revealSequencerRandomness(uint T, bytes32 randomness) external {
+    function revealSequencerRandomness(uint T, bytes32 randomness) external onlyOwner {
         SequencerEntry storage entry = sequencerEntries[T];
         if (!entry.committed) {
-            revert("Sequencer randomness not committed");
+            revert SequencerRandomnessNotCommitted(T);
         }
-        if (block.number <= entry.blockNumber + PRECOMMIT_DELAY) {
-            revert("Precommit delay not passed");
+        uint requiredBlock = entry.blockNumber + PRECOMMIT_DELAY;
+        if (block.number < requiredBlock) {
+            revert PrecommitDelayNotPassed(T, block.number, requiredBlock, entry.blockNumber);
         }
         if (entry.revealed) {
-            revert("Sequencer randomness already revealed");
+            revert SequencerRandomnessAlreadyRevealed(T);
         }
         bytes32 computedHash = keccak256(abi.encodePacked(randomness));
         if (entry.randomnessHash != computedHash) {

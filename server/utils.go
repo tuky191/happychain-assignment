@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
@@ -10,7 +11,9 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -160,6 +163,12 @@ func solidityPacked(types []string, values []interface{}) ([]byte, error) {
 // 	return b
 // }
 
+func to4Bytes(data []byte) [4]byte {
+	var b [4]byte
+	copy(b[:], data)
+	return b
+}
+
 // Function to hash a string to [32]byte using SHA-256
 func stringToBytes32(inputString string) [32]byte {
 
@@ -175,4 +184,50 @@ func stringToBytes32(inputString string) [32]byte {
 
 func bufferToHex(buffer []byte) string {
 	return "0x" + hex.EncodeToString(buffer)
+}
+
+func decodeCustomError(data string) (string, error) {
+	dataBytes, err := hex.DecodeString(data[2:]) // assuming data starts with "0x"
+	if err != nil {
+		return "", err
+	}
+	methodID := dataBytes[:4]
+	dataBytes = dataBytes[4:]
+	for name, abiJSON := range abiErrorMappings {
+		contractABI, err := abi.JSON(bytes.NewReader([]byte(abiJSON)))
+		if err != nil {
+			return "", err
+		}
+		v := make(map[string]interface{})
+		abiErr, err := contractABI.ErrorByID(to4Bytes(methodID))
+		if err != nil {
+			continue
+		}
+
+		err = abiErr.Inputs.UnpackIntoMap(v, dataBytes)
+		if err != nil {
+			continue
+		}
+
+		return convertReadableJson(v, name)
+	}
+
+	return "Unknown custom error", nil
+}
+
+func convertReadableJson(m map[string]interface{}, name string) (string, error) {
+	for key, value := range m {
+		// Check if the value is an array of 32 bytes (uint8)
+		if reflect.TypeOf(value) == reflect.ArrayOf(32, reflect.TypeOf(uint8(0))) {
+			byteArray := value.([32]uint8)
+			byteSlice := byteArray[:]
+			// Convert byte slice to string and trim null bytes
+			m[key] = strings.TrimRight(string(byteSlice), "\x00")
+		}
+	}
+	jsonBytes, err := json.Marshal(m)
+	if err != nil {
+		return "", nil
+	}
+	return fmt.Sprintf("Error: %s, Values: %s", name, string(jsonBytes)), nil
 }

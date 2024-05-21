@@ -46,12 +46,14 @@ contract RandomnessOracle {
             drandAvailable = false;
         }
 
-        try drandOracle.hasUpdatePeriodExpired(T) returns (bool expired) {
-            drandAvailable = drandAvailable || expired;
-        } catch {
-            drandAvailable = drandAvailable;
+        if (!drandAvailable) {
+            try drandOracle.hasUpdatePeriodExpired(T) returns (bool expired) {
+                drandAvailable = !expired;
+            } catch {
+                drandAvailable = false;
+            }
         }
-
+        
         try sequencerRandomOracle.getSequencerRandomness(T) returns (bytes32 randomness) {
             sequencerAvailable = randomness != 0;
         } catch {

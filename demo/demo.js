@@ -58,20 +58,18 @@ async function main() {
     signer
   );
 
-  console.log(`sleeping 20 seconds`);
-  await new Promise((resolve) => setTimeout(resolve, 20000));
-
   let T = Math.floor(Date.now() / 1000) - 40;
 
+  if (T % 2 !== 0) {
+    T -= 1;
+  }
   while (true) {
-    T = T + 1;
-    const currentTime = Math.floor(Date.now() / 1000);
+    T = T + 2;
+    const currentTime = Math.floor(Date.now() / 2000);
 
-    console.log(
-      `Fetching randomness for T=${T} (current time is ${currentTime})`
-    );
+    console.log(`Fetching randomness for T=${T}`);
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Get randomness from DrandOracle
     let drandRandomness;
