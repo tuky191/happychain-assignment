@@ -13,7 +13,6 @@ import (
 
 	"server/v0/pkg/utils"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/drand/drand/client"
 	httpclient "github.com/drand/drand/client/http"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -24,6 +23,7 @@ import (
 type Server struct {
 	DrandClient      client.Client
 	EthClient        *ethclient.Client
+	Contracts        *server.Contracts
 	PrivateKey       *ecdsa.PrivateKey
 	Commitments      map[int64]string
 	TransactionPool  map[common.Hash]*server.Transaction
@@ -52,7 +52,12 @@ func NewServer(serverCfg server.Config) (*Server, error) {
 		return nil, fmt.Errorf("Failed to create Drand HTTP client: %v", err)
 	}
 	log.Println("Created Drand HTTP client successfully.")
-	spew.Dump(serverCfg)
+
+	contracts, err := utils.LoadContracts(&serverCfg.ContractAddresses, ethClient)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to load Contracts: %v", err)
+	}
+
 	return &Server{
 		DrandClient:      drandClient,
 		EthClient:        ethClient,
@@ -61,6 +66,7 @@ func NewServer(serverCfg server.Config) (*Server, error) {
 		PoolMutex:        &sync.Mutex{},
 		RevealTimestamps: make(map[int64]int64),
 		Config:           serverCfg,
+		Contracts:        contracts,
 	}, nil
 }
 
@@ -122,7 +128,8 @@ func (s *Server) revealSequencerRandom(commitTime int64) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse contract ABI: %v", err)
 	}
-	return s.sendTransaction(s.Config.ContractAddresses.SequencerRandomOracleAddress, "revealSequencerRandomness", contractABI, commitTime, revealValue)
+
+	return s.sendTransaction("revealSequencerRandomness", contractABI, commitTime, revealValue)
 }
 
 func (s *Server) commitSequencerRandom(currentTime int64) error {
@@ -158,7 +165,7 @@ func (s *Server) commitSequencerRandom(currentTime int64) error {
 	// Set the reveal timestamp
 	s.RevealTimestamps[currentTime+s.Config.PrecommitDelay] = currentTime
 
-	return s.sendTransaction(s.Config.ContractAddresses.SequencerRandomOracleAddress, "postRandomnessCommitment", contractABI, currentTime, randomnessHash)
+	return s.sendTransaction("postRandomnessCommitment", contractABI, currentTime, randomnessHash)
 }
 
 func (s *Server) updateDrandRandomness(currentTime int64) error {
@@ -174,7 +181,7 @@ func (s *Server) updateDrandRandomness(currentTime int64) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse contract ABI: %v", err)
 	}
-	return s.sendTransaction(s.Config.ContractAddresses.DrandOracleAddress, "postDrandRandomness", contractABI, currentTime, randomValueHex)
+	return s.sendTransaction("postDrandRandomness", contractABI, currentTime, randomValueHex)
 }
 
 func (s *Server) getDrandValue(timestamp int64) ([]byte, error) {
@@ -189,31 +196,25 @@ func (s *Server) getDrandValue(timestamp int64) ([]byte, error) {
 	return result.Randomness(), nil
 }
 
-func (s *Server) sendTransaction(contractAddress string, methodName string, contractABI abi.ABI, timestamp int64, value string) error {
-	tx, err := createTransaction(s.EthClient, s.Config.PrivateKey, contractAddress, methodName, contractABI, timestamp, value)
+func (s *Server) sendTransaction(methodName string, contractABI abi.ABI, timestamp int64, value string) error {
+	tx, err := callContract(methodName, s.Contracts, s.Config.TransactOpts, timestamp, value)
 	if err != nil {
-		return fmt.Errorf("Failed to create transaction: %v", err)
+		return err
 	}
-
-	signedTx, err := signAndSendTransaction(s.EthClient, tx, s.Config.PrivateKey)
-	if err != nil {
-		return fmt.Errorf("Failed to send transaction: %v", err)
-	}
-
 	s.PoolMutex.Lock()
 	customHash := utils.GenerateCustomHash(methodName, timestamp, value)
 	transactionPool[common.HexToHash(customHash)] = &server.Transaction{
-		Client:          s.EthClient,
-		PrivateKey:      s.PrivateKey,
-		ContractAddress: contractAddress,
-		MethodName:      methodName,
-		Timestamp:       timestamp,
-		Value:           value,
-		TxHash:          signedTx.Hash(),
-		Attempts:        0,
-		InitialSend:     time.Now(),
-		Tx:              signedTx,
-		ContractABI:     contractABI,
+		Client:       s.EthClient,
+		Contracts:    s.Contracts,
+		TransactOpts: s.Config.TransactOpts,
+		MethodName:   methodName,
+		Timestamp:    timestamp,
+		Value:        value,
+		TxHash:       tx.Hash(),
+		Attempts:     0,
+		InitialSend:  time.Now(),
+		Tx:           tx,
+		ContractABI:  contractABI,
 	}
 	s.PoolMutex.Unlock()
 	return nil

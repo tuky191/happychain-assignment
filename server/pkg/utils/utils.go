@@ -9,18 +9,26 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"os"
 	"reflect"
+	"server/v0/pkg/contracts"
+	"server/v0/types/server"
 	servertypes "server/v0/types/server"
 	"strconv"
 	"strings"
 	"time"
 
+	"server/v0/pkg/contract_factory"
+
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	bip39 "github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/sha3"
 )
@@ -90,7 +98,6 @@ func CalculateSequencerRandomnessHash(randomness string) (string, error) {
 
 	return SolidityPackedKeccak256(types, values)
 }
-
 func GenerateSequencerRandom() string {
 	h := sha256.New()
 	h.Write([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
@@ -130,11 +137,11 @@ func solidityPacked(types []string, values []interface{}) ([]byte, error) {
 	return packed, nil
 }
 
-// func stringToBytes32(s string) [32]byte {
-// 	var b [32]byte
-// 	copy(b[:], s)
-// 	return b
-// }
+func StringToBytes(s string) [32]byte {
+	var b [32]byte
+	copy(b[:], s)
+	return b
+}
 
 func To4Bytes(data []byte) [4]byte {
 	var b [4]byte
@@ -144,14 +151,13 @@ func To4Bytes(data []byte) [4]byte {
 
 // Function to hash a string to [32]byte using SHA-256
 func StringToBytes32(inputString string) [32]byte {
-
 	hash := sha256.New()
 	hash.Write([]byte(inputString))
 	hashBytes := hash.Sum(nil)
 
 	var hashArray [32]byte
 	copy(hashArray[:], hashBytes)
-
+	fmt.Printf("%s", hex.EncodeToString(hashBytes))
 	return hashArray
 }
 
@@ -159,7 +165,18 @@ func BufferToHex(buffer []byte) string {
 	return "0x" + hex.EncodeToString(buffer)
 }
 
-func DecodeCustomError(data string) (string, error) {
+func DecodeCustomError(customError error) (string, error) {
+
+	var data string
+	if customError != nil {
+		jsonErr, ok := customError.(server.JsonError)
+		if ok {
+			data = jsonErr.ErrorData().(string)
+		} else {
+			return "", fmt.Errorf("non-json error: %s", customError)
+		}
+	}
+	log.Printf("raw error data: %s", data)
 	dataBytes, err := hex.DecodeString(data[2:]) // assuming data starts with "0x"
 	if err != nil {
 		return "", err
@@ -218,6 +235,7 @@ func LoadServerConfig() (*servertypes.Config, error) {
 	}
 	log.Println("Derived private key from mnemonic successfully.")
 	delay := getEnvAsInt("DELAY", 9)
+	chainID := getEnvAsInt("CHAIN_ID", 31337)
 	precommitDelay := getEnvAsInt("PRECOMMIT_DELAY", 10)
 	drandInterval := getEnvAsInt("DRAND_INTERVAL", 3)
 	drandGenesis := getEnvAsInt("DRAND_GENESIS", 1609459200)
@@ -234,6 +252,10 @@ func LoadServerConfig() (*servertypes.Config, error) {
 	}
 	log.Println("Loaded contract addresses successfully.")
 
+	transactOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(chainID))
+	if err != nil {
+		return nil, err
+	}
 	return &servertypes.Config{
 		AnvilURL:            anvilURL,
 		Delay:               delay,
@@ -244,7 +266,33 @@ func LoadServerConfig() (*servertypes.Config, error) {
 		DrandChainHashBytes: drandChainHashBytes,
 		ContractAddresses:   *contractAddresses,
 		PrivateKey:          privateKey,
+		ChainID:             chainID,
+		TransactOpts:        transactOpts,
 	}, nil
+}
+
+func LoadContracts(contractAddresses *servertypes.ContractAddresses, client *ethclient.Client) (*servertypes.Contracts, error) {
+
+	// Create the Contracts struct
+	loadedContracts := &servertypes.Contracts{}
+	var err error
+	// Instantiate each contract using the factory function
+	loadedContracts.DrandOracle, err = contract_factory.CreateContract(common.HexToAddress(contractAddresses.DrandOracleAddress), client, contracts.NewDrandOracle)
+	if err != nil {
+		return nil, err
+	}
+
+	loadedContracts.SequencerRandomOracle, err = contract_factory.CreateContract(common.HexToAddress(contractAddresses.SequencerRandomOracleAddress), client, contracts.NewSequencerRandomOracle)
+	if err != nil {
+		return nil, err
+	}
+
+	loadedContracts.RandomnessOracle, err = contract_factory.CreateContract(common.HexToAddress(contractAddresses.RandomnessOracleAddress), client, contracts.NewRandomnessOracle)
+	if err != nil {
+		return nil, err
+	}
+
+	return loadedContracts, nil
 }
 
 func LoadContractAddresses(filename string) (*servertypes.ContractAddresses, error) {
