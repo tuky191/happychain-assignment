@@ -15,4 +15,5 @@ module.exports = {
       version: "0.8.24", // Fetch exact version from solc-bin
     },
   },
+  plugins: ["@chainsafe/truffle-plugin-abigen"],
 };

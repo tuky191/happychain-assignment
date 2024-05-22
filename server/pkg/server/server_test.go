@@ -1,10 +1,12 @@
-package main
+package server
 
 import (
 	"context"
 	"fmt"
 	"log"
 	"math/big"
+	"server/v0/pkg/contracts"
+	"server/v0/pkg/utils"
 	"strings"
 	"testing"
 
@@ -15,97 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/assert"
 )
-
-// import (
-// 	"fmt"
-// 	"net/http"
-// 	"net/http/httptest"
-// 	"testing"
-// )
-
-// func TestGetDrandValue(t *testing.T) {
-
-// 	tests := []struct {
-// 		name           string
-// 		timestamp      int64
-// 		responseStatus int
-// 		responseBody   string
-// 		expectedValue  string
-// 		expectError    bool
-// 		mockHTTPError  bool
-// 	}{
-// 		{
-// 			name:           "Valid response",
-// 			timestamp:      1609459260,
-// 			responseStatus: http.StatusOK,
-// 			responseBody:   `{"round":53648642262,"randomness":"abc123"}`,
-// 			expectedValue:  "abc123",
-// 			expectError:    false,
-// 			mockHTTPError:  false,
-// 		},
-// 		{
-// 			name:           "Invalid JSON response",
-// 			timestamp:      1609459260,
-// 			responseStatus: http.StatusOK,
-// 			responseBody:   `{"round":53648642262,"randomness":}`,
-// 			expectedValue:  "",
-// 			expectError:    true,
-// 			mockHTTPError:  false,
-// 		},
-// 		{
-// 			name:           "Non-200 HTTP status",
-// 			timestamp:      1609459260,
-// 			responseStatus: http.StatusInternalServerError,
-// 			responseBody:   `Internal Server Error`,
-// 			expectedValue:  "",
-// 			expectError:    true,
-// 			mockHTTPError:  false,
-// 		},
-// 		{
-// 			name:           "HTTP request error",
-// 			timestamp:      1609459260,
-// 			responseStatus: http.StatusOK,
-// 			responseBody:   `{"round":53648642262,"randomness":"abc123"}`,
-// 			expectedValue:  "",
-// 			expectError:    true,
-// 			mockHTTPError:  true,
-// 		},
-// 	}
-
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			// Create a mock server
-// 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 				w.WriteHeader(tt.responseStatus)
-// 				w.Write([]byte(tt.responseBody))
-// 			}))
-// 			defer server.Close()
-
-// 			// Replace the httpGet function to use the mock server URL
-// 			oldHttpGet := httpGet
-// 			httpGet = func(url string) (*http.Response, error) {
-// 				if tt.mockHTTPError {
-// 					return nil, fmt.Errorf("mock HTTP error")
-// 				}
-// 				round := (tt.timestamp - drandGenesis) / drandInterval
-// 				mockURL := fmt.Sprintf("%s/public/%d", server.URL, round)
-// 				return http.Get(mockURL)
-// 			}
-// 			defer func() { httpGet = oldHttpGet }()
-
-// 			// Call the function
-// 			value, err := getDrandValue(tt.timestamp)
-
-// 			// Check the result
-// 			if (err != nil) != tt.expectError {
-// 				t.Errorf("Expected error: %v, got: %v", tt.expectError, err)
-// 			}
-// 			if value != tt.expectedValue {
-// 				t.Errorf("Expected value: %s, got: %s", tt.expectedValue, value)
-// 			}
-// 		})
-// 	}
-// }
 
 func TestGetTransactionReceipt(t *testing.T) {
 	// Create Ethereum client
@@ -136,15 +47,15 @@ func TestSolidityPackedKeccak256(t *testing.T) {
 	expectedBytes32Hex := "0x767b8f9294d1ba38d120c16ee7c354ec58fd89d8d42cc4a9a3c70e74ed04f0cd"
 	expectedHash := "0x30d109baad1c2d0db758043170cee40f9306645f6b8d75355b22a5e62845035f" // Change this to match the expected hash
 
-	bytes32Value := stringToBytes32(input)
-	bytes32Hex := bufferToHex(bytes32Value[:])
+	bytes32Value := utils.StringToBytes32(input)
+	bytes32Hex := utils.BufferToHex(bytes32Value[:])
 	assert.Equal(t, expectedBytes32Hex, bytes32Hex, "Bytes32 value should match expected")
 
 	types := []string{"bytes32"}
 	values := []interface{}{bytes32Value}
 	contractABI, err := abi.JSON(strings.NewReader(`[{"constant":false,"inputs":[{"name":"T","type":"uint256"},{"name":"randomnessHash","type":"bytes32"}],"name":"postRandomnessCommitment","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`))
 	fmt.Print(contractABI.Methods)
-	hash, err := solidityPackedKeccak256(types, values)
+	hash, err := utils.SolidityPackedKeccak256(types, values)
 	assert.NoError(t, err, "Error should be nil")
 	assert.Equal(t, expectedHash, hash, "Hash should match expected")
 }
@@ -253,7 +164,7 @@ func TestDecodeCustomError(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := decodeCustomError(tc.data)
+			result, err := utils.DecodeCustomError(tc.data)
 			if (err != nil) != tc.expectErr {
 				t.Fatalf("expected error: %v, got: %v", tc.expectErr, err)
 			}
@@ -264,4 +175,11 @@ func TestDecodeCustomError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestContracts(t *testing.T) {
+	drandOracleABI := contracts.DrandOracleMetaData.ABI
+	spew.Dump(drandOracleABI)
+	//oracleABI, err := contracts.DrandOracleMetaData.GetAbi()
+
 }
