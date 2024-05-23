@@ -61,6 +61,7 @@ type Config struct {
 	DrandGenesis        int64
 	DrandChainHashBytes []byte
 	DrandURL            string
+	DrandMaxRetry       int64
 	ContractAddresses   ContractAddresses
 	TransactOpts        *bind.TransactOpts
 }

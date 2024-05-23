@@ -239,6 +239,8 @@ func LoadServerConfig() (*servertypes.Config, error) {
 	precommitDelay := getEnvAsInt("PRECOMMIT_DELAY", 10)
 	drandInterval := getEnvAsInt("DRAND_INTERVAL", 3)
 	drandGenesis := getEnvAsInt("DRAND_GENESIS", 1609459200)
+	drandMaxRetry := getEnvAsInt("DRAND_MAX_RETRY", 3)
+
 	drandChainHash := getEnv("DRAND_CHAIN_HASH", "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971")
 	drandURL := getEnv("DRAND_URL", "https://api.drand.sh")
 	drandChainHashBytes, err := hex.DecodeString(drandChainHash)
@@ -268,6 +270,7 @@ func LoadServerConfig() (*servertypes.Config, error) {
 		PrivateKey:          privateKey,
 		ChainID:             chainID,
 		TransactOpts:        transactOpts,
+		DrandMaxRetry:       drandMaxRetry,
 	}, nil
 }
 

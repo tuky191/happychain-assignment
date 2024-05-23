@@ -90,9 +90,7 @@ async function main() {
     // Compute combined randomness using RandomnessOracle
     try {
       const computedRandomness = await randomnessOracle.computeRandomness(T);
-      console.log(
-        `Computed combined randomness for T=${T}: ${computedRandomness}`
-      );
+      console.log(`Computed randomness for T=${T}: ${computedRandomness}`);
     } catch (error) {}
 
     // Check if randomness is available

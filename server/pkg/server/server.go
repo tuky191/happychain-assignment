@@ -135,10 +135,22 @@ func (s *Server) revealSequencerRandom(commitTime int64) error {
 func (s *Server) commitSequencerRandom(currentTime int64) error {
 	sequencerRandomValue := utils.GenerateSequencerRandom()
 	log.Printf("Generated sequencer random value: %s", sequencerRandomValue)
-	drandValue, err := s.getDrandValue(currentTime - s.Config.PrecommitDelay)
-	if err != nil {
-		return fmt.Errorf("Error fetching Drand value: %v", err)
+	var drandValue []byte
+	var err error
+	delay := s.Config.Delay
+	retry := int64(0)
+	for {
+		drandValue, err = s.getDrandValue(currentTime - delay)
+		if err == nil {
+			break
+		}
+		log.Printf("Error fetching Drand value at timestamp %d: %v. Retrying...", currentTime-delay, err)
+		delay++
+		if retry >= s.Config.DrandMaxRetry {
+			return fmt.Errorf("Unable to fetch DRAND value, timestamp %d", currentTime)
+		}
 	}
+
 	drandValueHex := utils.BufferToHex(drandValue)
 
 	// This generates the randomness by adding the keccak256(drandValueHex and sequencerRandomValue)

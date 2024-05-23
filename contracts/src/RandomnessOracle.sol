@@ -20,20 +20,24 @@ contract RandomnessOracle {
         try drandOracle.getDrand(T) returns (bytes32 randomness) {
             drandRandomness = randomness;
         } catch {
-            return 0;
+            drandRandomness = 0;
+        }
+
+        if (drandRandomness != 0) {
+            return drandRandomness;
         }
 
         try sequencerRandomOracle.getSequencerRandomness(T) returns (bytes32 randomness) {
             sequencerRandomness = randomness;
         } catch {
-            return 0;
+            sequencerRandomness = 0;
         }
 
-        if (drandRandomness == 0 || sequencerRandomness == 0) {
-            return 0;
+        if (sequencerRandomness != 0) {
+            return sequencerRandomness;
         }
 
-        return keccak256(abi.encodePacked(drandRandomness, sequencerRandomness));
+        return 0;
     }
 
     function isRandomnessEverAvailable(uint T) external view returns (bool) {
@@ -60,7 +64,7 @@ contract RandomnessOracle {
             sequencerAvailable = false;
         }
 
-        return drandAvailable && sequencerAvailable;
+        return drandAvailable || sequencerAvailable;
     }
 
     function simpleGetRandomness(uint T) external view returns (bytes32) {
